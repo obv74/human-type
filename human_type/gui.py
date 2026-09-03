@@ -38,6 +38,8 @@ class HumanTypeApp(ctk.CTk):
         self._hotkey_listener: Optional[pynput_keyboard.GlobalHotKeys] = None
         self._latest_progress: Optional[TypeProgress] = None
         self._last_ui = 0.0
+        self._resume_at = 0
+        self._resume_text = ""
 
         self._build()
         self._bind_hotkeys()
@@ -186,7 +188,7 @@ class HumanTypeApp(ctk.CTk):
             height=30,
             fg_color="#2a2f3a",
             hover_color="#353b48",
-            command=lambda: self.text.delete("1.0", "end"),
+            command=self._clear_text,
         ).pack(side="left", padx=(8, 0))
 
         self.always_on_top = ctk.CTkCheckBox(
@@ -239,9 +241,19 @@ class HumanTypeApp(ctk.CTk):
         if self._busy:
             return
         text = self._body()
+        if text != self._resume_text:
+            self._reset_resume()
+        self._sync_start_label()
         n = len(text)
         if n == 0:
             self.status.configure(text="Ready  ·  paste some text to begin")
+            return
+        if self._can_resume(text):
+            left = n - self._resume_at
+            secs = estimate_seconds(text[self._resume_at :], settings)
+            self.status.configure(
+                text=f"Paused  ·  {self._resume_at}/{n}  ·  {left} left  ·  ~{secs:.0f}s  ·  F8 resumes"
+            )
             return
         secs = estimate_seconds(text, settings)
         self.status.configure(text=f"Ready  ·  {n} characters  ·  ~{secs:.0f}s  ·  F8 types now, Start waits")
@@ -257,7 +269,28 @@ class HumanTypeApp(ctk.CTk):
             return
         self.text.delete("1.0", "end")
         self.text.insert("1.0", clip)
+        self._reset_resume()
         self._refresh_meta()
+
+    def _clear_text(self) -> None:
+        self.text.delete("1.0", "end")
+        self._reset_resume()
+        self._refresh_meta()
+
+    def _can_resume(self, text: str) -> bool:
+        return bool(text) and text == self._resume_text and 0 < self._resume_at < len(text)
+
+    def _reset_resume(self) -> None:
+        self._resume_at = 0
+        self._resume_text = ""
+        self.progress.set(0)
+        self._sync_start_label()
+
+    def _sync_start_label(self) -> None:
+        if self._can_resume(self._body()):
+            self.start_btn.configure(text="Resume typing  ·  F8")
+        else:
+            self.start_btn.configure(text="Start typing  ·  F8")
 
     def _bind_hotkeys(self) -> None:
         def on_f8() -> None:
@@ -292,10 +325,14 @@ class HumanTypeApp(ctk.CTk):
         self._run_worker(text, countdown=0)
 
     def _run_worker(self, text: str, countdown: int) -> None:
+        start_at = self._resume_at if self._can_resume(text) else 0
+        if start_at == 0:
+            self._resume_text = text
+            self._resume_at = 0
         self._busy = True
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
-        self.progress.set(0)
+        self.progress.set((start_at / len(text)) if text else 0)
         self.text.configure(state="disabled")
 
         def work() -> None:
@@ -304,14 +341,23 @@ class HumanTypeApp(ctk.CTk):
                     if not self._busy:
                         self.after(0, lambda: self._set_status("Stopped"))
                         return
-                    self.after(0, lambda n=left: self._set_status(f"Click the target field… starting in {n}"))
+                    self.after(
+                        0,
+                        lambda n=left: self._set_status(
+                            f"Click the target field… starting in {n}"
+                            if start_at == 0
+                            else f"Click the field to resume… {n}"
+                        ),
+                    )
                     time.sleep(1)
                 if not self._busy:
                     self.after(0, lambda: self._set_status("Stopped"))
                     return
-                self.after(0, lambda: self._set_status("Typing…  F9 to stop"))
+                self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
                 settings = self._settings()
-                self._typer.type_text(text, settings, on_progress=self._on_progress)
+                self._typer.type_text(
+                    text, settings, on_progress=self._on_progress, start_at=start_at
+                )
             finally:
                 self.after(0, self._idle)
 
@@ -332,12 +378,18 @@ class HumanTypeApp(ctk.CTk):
         if progress.total:
             self.progress.set(progress.index / progress.total)
         if progress.stopped:
-            self._set_status(f"Stopped  ·  {progress.index}/{progress.total} characters")
+            self._resume_at = progress.index
+            self._resume_text = self._body()
+            self._sync_start_label()
+            self._set_status(
+                f"Paused  ·  {progress.index}/{progress.total}  ·  F8 resumes, not from the start"
+            )
         elif progress.done:
+            self._reset_resume()
             self.progress.set(1)
             self._set_status(f"Done  ·  {progress.total} characters")
         else:
-            self._set_status(f"Typing…  {progress.index}/{progress.total}  ·  F9 to stop")
+            self._set_status(f"Typing…  {progress.index}/{progress.total}  ·  F9 to pause")
 
     def _stop(self) -> None:
         if not self._busy:
@@ -351,6 +403,7 @@ class HumanTypeApp(ctk.CTk):
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
         self.text.configure(state="normal")
+        self._sync_start_label()
 
     def _set_status(self, message: str) -> None:
         self.status.configure(text=message)

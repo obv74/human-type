@@ -114,23 +114,30 @@ class HumanTyper:
         text: str,
         settings: TypeSettings,
         on_progress: Optional[Callable[[TypeProgress], None]] = None,
+        start_at: int = 0,
     ) -> TypeProgress:
         self._stop = False
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         total = len(text)
+        start_at = max(0, min(start_at, total))
+        remaining = text[start_at:]
         human = max(0.0, min(1.0, settings.humanize))
         typo_rate = (0.018 * human) if settings.typos else 0.0
-        delays = _plan_delays(text, settings)
+        delays = _plan_delays(remaining, settings)
         overhead = 0.004
 
-        for i, char in enumerate(text):
+        if on_progress and start_at:
+            on_progress(TypeProgress(index=start_at, total=total))
+
+        for offset, char in enumerate(remaining):
+            i = start_at + offset
             if self._stop:
                 progress = TypeProgress(index=i, total=total, stopped=True)
                 if on_progress:
                     on_progress(progress)
                 return progress
 
-            time.sleep(max(0.0, delays[i] - overhead))
+            time.sleep(max(0.0, delays[offset] - overhead))
 
             nxt = text[i + 1] if i + 1 < total else ""
             if typo_rate > 0 and char.isalpha() and i > 0 and random.random() < typo_rate:

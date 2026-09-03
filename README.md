@@ -8,8 +8,8 @@ A Windows 10/11 desktop tool that types your text into whatever field is focused
 2. Click the input you want filled (browser, Word, Discord, a game chat box, anywhere).
 3. Start typing:
    - **Start typing** waits a few seconds so you can click the field.
-   - **F8** types immediately into whatever is already focused.
-4. **F9** stops.
+   - **F8** types immediately into whatever is already focused. After **F9**, F8 continues from where it stopped.
+4. **F9** pauses. It does not restart from the beginning.
 
 It never pastes. It sends keystrokes one character at a time, with uneven timing based on keyboard distance, faster common words, short bursts, punctuation pauses, and optional slips (nearby key, double-tap, or swapped letters) that get corrected.
 
