@@ -101,7 +101,7 @@ class HumanTypeApp(ctk.CTk):
 
         row1 = ctk.CTkFrame(settings, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
-        ctk.CTkLabel(row1, text="Speed", text_color=MUTED, width=90, anchor="w").pack(side="left")
+        ctk.CTkLabel(row1, text="WPM", text_color=MUTED, width=90, anchor="w").pack(side="left")
         self.wpm = ctk.CTkSlider(
             row1, from_=30, to=140, number_of_steps=110, progress_color=ACCENT, button_color=ACCENT,
             command=lambda _v: self._refresh_meta(),

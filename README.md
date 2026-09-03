@@ -33,8 +33,8 @@ If a program ignores the keystrokes, run the same command from an **Administrato
 
 | Control | What it does |
 |---|---|
-| Speed | Average typing rate (about 30–140 words per minute) |
-| Humanize | How uneven the rhythm is. **Even** is almost robotic. **Natural** is the default. **Messy** adds more pauses |
+| WPM | Exact overall typing speed (30–140 words per minute). 62 WPM takes about as long as a 62 WPM typist |
+| Humanize | How uneven the rhythm is around that WPM. **Even** is steady. **Natural** bursts and pauses but still finishes at the selected WPM |
 | Countdown | Seconds to wait after **Start typing** so you can click the target |
 | Occasional typos | Sometimes hits a nearby key, then deletes it and types the right one |
 | Always on top | Keeps the window visible while you click another app |

@@ -82,12 +82,9 @@ class HumanTyper:
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         total = len(text)
         human = max(0.0, min(1.0, settings.humanize))
-        mean = 60.0 / (max(20, settings.wpm) * 5.0)
-        sigma = mean * (0.12 + 0.55 * human)
         typo_rate = (0.022 * human) if settings.typos else 0.0
-        burst_left = 0
-        since_pause = 0
-        prev = ""
+        delays = _plan_delays(text, settings)
+        overhead = 0.004
 
         for i, char in enumerate(text):
             if self._stop:
@@ -96,33 +93,7 @@ class HumanTyper:
                     on_progress(progress)
                 return progress
 
-            if burst_left <= 0 and human > 0.15 and random.random() < 0.12 * human:
-                burst_left = random.randint(3, 8)
-
-            delay = random.gauss(mean, sigma)
-            if burst_left > 0:
-                burst_left -= 1
-                delay *= random.uniform(0.35, 0.7)
-            else:
-                delay *= random.uniform(0.75, 1.35)
-
-            if prev in ".!?":
-                delay += random.uniform(0.18, 0.7) * human
-            elif prev in ",;:":
-                delay += random.uniform(0.06, 0.28) * human
-            elif prev in " ":
-                delay += random.uniform(0.02, 0.14) * human
-            if char.isupper() and char.isalpha():
-                delay += random.uniform(0.015, 0.07) * (0.4 + human)
-            if char in "()[]{}\"'":
-                delay += random.uniform(0.02, 0.1) * human
-
-            since_pause += 1
-            if human > 0.25 and since_pause > random.randint(55, 140) and random.random() < 0.35 * human:
-                delay += random.uniform(0.35, 1.6) * human
-                since_pause = 0
-
-            time.sleep(max(0.012, delay))
+            time.sleep(max(0.0, delays[i] - overhead))
 
             if (
                 typo_rate > 0
@@ -133,14 +104,13 @@ class HumanTyper:
                 if wrong:
                     self.keyboard.write(wrong)
                     tiny_settle()
-                    time.sleep(random.uniform(0.08, 0.28) * (0.5 + human))
+                    time.sleep(random.uniform(0.05, 0.16) * (0.4 + 0.6 * human))
                     self.keyboard.backspace()
                     tiny_settle()
-                    time.sleep(random.uniform(0.04, 0.14))
+                    time.sleep(random.uniform(0.02, 0.08))
 
             self.keyboard.write(char)
             tiny_settle()
-            prev = char
 
             if on_progress:
                 on_progress(TypeProgress(index=i + 1, total=total))
@@ -153,9 +123,55 @@ class HumanTyper:
 
 def estimate_seconds(text: str, settings: TypeSettings) -> float:
     chars = max(1, len(text))
+    return chars * 60.0 / (max(20, settings.wpm) * 5.0)
+
+
+def _plan_delays(text: str, settings: TypeSettings) -> list[float]:
+    """Per-character waits that still average to the selected WPM."""
+    n = len(text)
+    if n == 0:
+        return []
+    human = max(0.0, min(1.0, settings.humanize))
     mean = 60.0 / (max(20, settings.wpm) * 5.0)
-    extra = 0.08 * settings.humanize
-    return chars * (mean + extra)
+    if human <= 0.02:
+        return [mean] * n
+
+    weights: list[float] = []
+    burst_left = 0
+    since_pause = 0
+    prev = ""
+    for char in text:
+        if burst_left <= 0 and human > 0.15 and random.random() < 0.12 * human:
+            burst_left = random.randint(3, 8)
+        weight = random.gauss(1.0, 0.12 + 0.50 * human)
+        weight = max(0.28, min(2.4, weight))
+        if burst_left > 0:
+            burst_left -= 1
+            weight *= random.uniform(0.45, 0.75)
+        if prev in ".!?":
+            weight *= 1.0 + 1.1 * human
+        elif prev in ",;:":
+            weight *= 1.0 + 0.45 * human
+        elif prev == " ":
+            weight *= 1.0 + 0.18 * human
+        if char.isupper() and char.isalpha():
+            weight *= 1.0 + 0.12 * (0.4 + human)
+        if char in "()[]{}\"'":
+            weight *= 1.0 + 0.12 * human
+        since_pause += 1
+        if human > 0.25 and since_pause > random.randint(55, 140) and random.random() < 0.35 * human:
+            weight *= 1.0 + random.uniform(1.2, 3.0) * human
+            since_pause = 0
+        weights.append(weight)
+        prev = char
+
+    target = n * mean
+    total_w = sum(weights) or 1.0
+    delays = [max(0.012, target * (weight / total_w)) for weight in weights]
+    current = sum(delays)
+    if current > 0:
+        delays = [max(0.012, delay * (target / current)) for delay in delays]
+    return delays
 
 
 def _nearby(char: str) -> str:
