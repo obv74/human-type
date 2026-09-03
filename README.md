@@ -11,7 +11,7 @@ A Windows 10/11 desktop tool that types your text into whatever field is focused
    - **F8** types immediately into whatever is already focused.
 4. **F9** stops.
 
-It never pastes. It sends keystrokes one character at a time, with uneven timing, short bursts, punctuation pauses, and optional typos that get backspaced and fixed.
+It never pastes. It sends keystrokes one character at a time, with uneven timing based on keyboard distance, faster common words, short bursts, punctuation pauses, and optional slips (nearby key, double-tap, or swapped letters) that get corrected.
 
 ## Install (Windows)
 
@@ -34,9 +34,9 @@ If a program ignores the keystrokes, run the same command from an **Administrato
 | Control | What it does |
 |---|---|
 | WPM | Exact overall typing speed (30–140 words per minute). 62 WPM takes about as long as a 62 WPM typist |
-| Humanize | How uneven the rhythm is around that WPM. **Even** is steady. **Natural** bursts and pauses but still finishes at the selected WPM |
+| Humanize | How uneven the rhythm is around that WPM. **Even** is steady. **Natural** uses finger travel, word chunks, bursts, and pauses, but still finishes at the selected WPM |
 | Countdown | Seconds to wait after **Start typing** so you can click the target |
-| Occasional typos | Sometimes hits a nearby key, then deletes it and types the right one |
+| Occasional typos | Nearby-key misses, double letters, or swapped letters, then immediate correction |
 | Always on top | Keeps the window visible while you click another app |
 | Paste clipboard | Drops whatever you copied into the box |
 
