@@ -26,8 +26,8 @@ class HumanTypeApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("HumanType")
-        self.geometry("720x640")
-        self.minsize(640, 560)
+        self.geometry("720x700")
+        self.minsize(660, 640)
         self.configure(fg_color=BG)
 
         ctk.set_appearance_mode("dark")
@@ -47,8 +47,109 @@ class HumanTypeApp(ctk.CTk):
     def _build(self) -> None:
         pad = 22
 
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
+        footer.pack(side="bottom", fill="x", padx=pad, pady=(0, 18))
+        footer.pack_propagate(False)
+
+        self.progress = ctk.CTkProgressBar(
+            footer, progress_color=ACCENT, fg_color="#2a2f3a", height=6
+        )
+        self.progress.pack(fill="x", pady=(6, 8))
+        self.progress.set(0)
+
+        self.status = ctk.CTkLabel(
+            footer,
+            text="Ready  ·  click a field after Start, or press F8 while that field is focused",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="w",
+            height=22,
+        )
+        self.status.pack(fill="x")
+
+        actions = ctk.CTkFrame(self, fg_color="transparent")
+        actions.pack(side="bottom", fill="x", padx=pad, pady=(0, 8))
+
+        self.start_btn = ctk.CTkButton(
+            actions,
+            text="Start typing  ·  F8",
+            height=42,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            text_color="#1a140c",
+            command=self._start_with_countdown,
+        )
+        self.start_btn.pack(side="left", fill="x", expand=True)
+
+        self.stop_btn = ctk.CTkButton(
+            actions,
+            text="Stop  ·  F9",
+            height=42,
+            width=140,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color="#3a2226",
+            hover_color="#4a2a30",
+            text_color=DANGER,
+            command=self._stop,
+            state="disabled",
+        )
+        self.stop_btn.pack(side="left", padx=(10, 0))
+
+        settings = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
+        settings.pack(side="bottom", fill="x", padx=pad, pady=(0, 12))
+
+        row1 = ctk.CTkFrame(settings, fg_color="transparent")
+        row1.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(row1, text="Speed", text_color=MUTED, width=90, anchor="w").pack(side="left")
+        self.wpm = ctk.CTkSlider(
+            row1, from_=30, to=140, number_of_steps=110, progress_color=ACCENT, button_color=ACCENT,
+            command=lambda _v: self._refresh_meta(),
+        )
+        self.wpm.set(62)
+        self.wpm.pack(side="left", fill="x", expand=True, padx=8)
+        self.wpm_label = ctk.CTkLabel(row1, text="62 WPM", text_color=TEXT, width=80, anchor="e")
+        self.wpm_label.pack(side="right")
+
+        row2 = ctk.CTkFrame(settings, fg_color="transparent")
+        row2.pack(fill="x", padx=16, pady=6)
+        ctk.CTkLabel(row2, text="Humanize", text_color=MUTED, width=90, anchor="w").pack(side="left")
+        self.humanize = ctk.CTkSlider(
+            row2, from_=0, to=100, number_of_steps=100, progress_color=ACCENT, button_color=ACCENT,
+            command=lambda _v: self._refresh_meta(),
+        )
+        self.humanize.set(70)
+        self.humanize.pack(side="left", fill="x", expand=True, padx=8)
+        self.human_label = ctk.CTkLabel(row2, text="Natural", text_color=TEXT, width=80, anchor="e")
+        self.human_label.pack(side="right")
+
+        row3 = ctk.CTkFrame(settings, fg_color="transparent")
+        row3.pack(fill="x", padx=16, pady=(6, 14))
+        ctk.CTkLabel(row3, text="Countdown", text_color=MUTED, width=90, anchor="w").pack(side="left")
+        self.delay = ctk.CTkSlider(
+            row3, from_=1, to=8, number_of_steps=7, progress_color=ACCENT, button_color=ACCENT,
+            command=lambda _v: self._refresh_meta(),
+        )
+        self.delay.set(3)
+        self.delay.pack(side="left", fill="x", expand=True, padx=8)
+        self.delay_label = ctk.CTkLabel(row3, text="3 s", text_color=TEXT, width=80, anchor="e")
+        self.delay_label.pack(side="right")
+
+        extras = ctk.CTkFrame(settings, fg_color="transparent")
+        extras.pack(fill="x", padx=16, pady=(0, 14))
+        self.typos = ctk.CTkCheckBox(
+            extras,
+            text="Occasional typos (then correct them)",
+            font=ctk.CTkFont(size=13),
+            text_color=MUTED,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+        )
+        self.typos.select()
+        self.typos.pack(side="left")
+
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=pad, pady=(22, 8))
+        header.pack(side="top", fill="x", padx=pad, pady=(22, 8))
 
         ctk.CTkLabel(
             header,
@@ -110,100 +211,6 @@ class HumanTypeApp(ctk.CTk):
         self.text.pack(fill="both", expand=True, padx=14, pady=(0, 14))
         self.text.bind("<KeyRelease>", lambda _e: self._refresh_meta())
         self.text.bind("<<Paste>>", lambda _e: self.after(50, self._refresh_meta))
-
-        settings = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12)
-        settings.pack(fill="x", padx=pad, pady=(0, 12))
-
-        row1 = ctk.CTkFrame(settings, fg_color="transparent")
-        row1.pack(fill="x", padx=16, pady=(14, 6))
-        ctk.CTkLabel(row1, text="Speed", text_color=MUTED, width=90, anchor="w").pack(side="left")
-        self.wpm = ctk.CTkSlider(
-            row1, from_=30, to=140, number_of_steps=110, progress_color=ACCENT, button_color=ACCENT,
-            command=lambda _v: self._refresh_meta(),
-        )
-        self.wpm.set(62)
-        self.wpm.pack(side="left", fill="x", expand=True, padx=8)
-        self.wpm_label = ctk.CTkLabel(row1, text="62 WPM", text_color=TEXT, width=80, anchor="e")
-        self.wpm_label.pack(side="right")
-
-        row2 = ctk.CTkFrame(settings, fg_color="transparent")
-        row2.pack(fill="x", padx=16, pady=6)
-        ctk.CTkLabel(row2, text="Humanize", text_color=MUTED, width=90, anchor="w").pack(side="left")
-        self.humanize = ctk.CTkSlider(
-            row2, from_=0, to=100, number_of_steps=100, progress_color=ACCENT, button_color=ACCENT,
-            command=lambda _v: self._refresh_meta(),
-        )
-        self.humanize.set(70)
-        self.humanize.pack(side="left", fill="x", expand=True, padx=8)
-        self.human_label = ctk.CTkLabel(row2, text="Natural", text_color=TEXT, width=80, anchor="e")
-        self.human_label.pack(side="right")
-
-        row3 = ctk.CTkFrame(settings, fg_color="transparent")
-        row3.pack(fill="x", padx=16, pady=(6, 14))
-        ctk.CTkLabel(row3, text="Countdown", text_color=MUTED, width=90, anchor="w").pack(side="left")
-        self.delay = ctk.CTkSlider(
-            row3, from_=1, to=8, number_of_steps=7, progress_color=ACCENT, button_color=ACCENT,
-            command=lambda _v: self._refresh_meta(),
-        )
-        self.delay.set(3)
-        self.delay.pack(side="left", fill="x", expand=True, padx=8)
-        self.delay_label = ctk.CTkLabel(row3, text="3 s", text_color=TEXT, width=80, anchor="e")
-        self.delay_label.pack(side="right")
-
-        extras = ctk.CTkFrame(settings, fg_color="transparent")
-        extras.pack(fill="x", padx=16, pady=(0, 14))
-        self.typos = ctk.CTkCheckBox(
-            extras,
-            text="Occasional typos (then correct them)",
-            font=ctk.CTkFont(size=13),
-            text_color=MUTED,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-        )
-        self.typos.select()
-        self.typos.pack(side="left")
-
-        actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.pack(fill="x", padx=pad, pady=(0, 8))
-
-        self.start_btn = ctk.CTkButton(
-            actions,
-            text="Start typing  ·  F8",
-            height=42,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="#1a140c",
-            command=self._start_with_countdown,
-        )
-        self.start_btn.pack(side="left", fill="x", expand=True)
-
-        self.stop_btn = ctk.CTkButton(
-            actions,
-            text="Stop  ·  F9",
-            height=42,
-            width=140,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color="#3a2226",
-            hover_color="#4a2a30",
-            text_color=DANGER,
-            command=self._stop,
-            state="disabled",
-        )
-        self.stop_btn.pack(side="left", padx=(10, 0))
-
-        self.progress = ctk.CTkProgressBar(self, progress_color=ACCENT, fg_color="#2a2f3a", height=6)
-        self.progress.pack(fill="x", padx=pad, pady=(4, 6))
-        self.progress.set(0)
-
-        self.status = ctk.CTkLabel(
-            self,
-            text="Ready  ·  click a field after Start, or press F8 while that field is focused",
-            font=ctk.CTkFont(size=12),
-            text_color=MUTED,
-            anchor="w",
-        )
-        self.status.pack(fill="x", padx=pad, pady=(0, 16))
 
     def _settings(self) -> TypeSettings:
         return TypeSettings(
