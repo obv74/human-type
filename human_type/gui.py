@@ -54,6 +54,7 @@ class HumanTypeApp(ctk.CTk):
         self._resume_at = 0
         self._resume_text = ""
         self._stealth = False
+        self._tray_active = False
         self._tray: Optional[pystray.Icon] = None
         self._tray_thread: Optional[threading.Thread] = None
 
@@ -329,7 +330,7 @@ class HumanTypeApp(ctk.CTk):
         self._hotkey_listener.start()
 
     def _in_tray(self) -> bool:
-        return self.state() == "withdrawn"
+        return self._tray_active
 
     def _stealth_from_clipboard(self) -> None:
         """While minimized: type clipboard into the focused field. No UI changes."""
@@ -341,7 +342,7 @@ class HumanTypeApp(ctk.CTk):
             return
         if not clip.strip():
             return
-        self._run_worker(clip, countdown=0, stealth=True)
+        self._run_worker(clip, countdown=0, quiet=True)
 
     def _start_with_countdown(self) -> None:
         if self._busy:
@@ -360,19 +361,23 @@ class HumanTypeApp(ctk.CTk):
             if not self._in_tray():
                 self._set_status("Paste some text first")
             return
-        # focus_get() stays set after withdraw(), so tray mode must type now.
-        # Only use the countdown when this window is visible and focused.
-        if not self._in_tray() and self.focus_get() is not None:
+        # Tray / another app focused → type immediately. Never trust focus_get()
+        # after withdraw(); it still points at our last widget.
+        if self._in_tray():
+            self._run_worker(text, countdown=0, quiet=True)
+            return
+        if self.focus_get() is not None:
             self._start_with_countdown()
             return
         self._run_worker(text, countdown=0)
 
-    def _run_worker(self, text: str, countdown: int, stealth: bool = False) -> None:
-        self._stealth = stealth
-        if stealth:
-            start_at = 0
-        else:
-            start_at = self._resume_at if self._can_resume(text) else 0
+    def _run_worker(self, text: str, countdown: int, quiet: bool = False) -> None:
+        # Read Tk widgets on the UI thread only — worker-thread access can hang
+        # when the window is withdrawn to the tray.
+        settings = self._settings()
+        self._stealth = quiet
+        start_at = self._resume_at if self._can_resume(text) else 0
+        if not quiet:
             if start_at == 0:
                 self._resume_text = text
                 self._resume_at = 0
@@ -387,10 +392,10 @@ class HumanTypeApp(ctk.CTk):
             try:
                 for left in range(countdown, 0, -1):
                     if not self._busy:
-                        if not stealth:
+                        if not quiet:
                             self.after(0, lambda: self._set_status("Stopped"))
                         return
-                    if not stealth:
+                    if not quiet:
                         self.after(
                             0,
                             lambda n=left: self._set_status(
@@ -401,16 +406,15 @@ class HumanTypeApp(ctk.CTk):
                         )
                     time.sleep(1)
                 if not self._busy:
-                    if not stealth:
+                    if not quiet:
                         self.after(0, lambda: self._set_status("Stopped"))
                     return
-                if not stealth:
+                if not quiet:
                     self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
-                settings = self._settings()
                 self._typer.type_text(
                     text,
                     settings,
-                    on_progress=None if stealth else self._on_progress,
+                    on_progress=None if quiet else self._on_progress,
                     start_at=start_at,
                 )
             finally:
@@ -477,8 +481,9 @@ class HumanTypeApp(ctk.CTk):
             self.after(0, self._minimize_to_tray)
 
     def _minimize_to_tray(self) -> None:
-        if self.state() == "withdrawn":
+        if self._tray_active:
             return
+        self._tray_active = True
         self.withdraw()
         self._start_tray()
 
@@ -504,6 +509,7 @@ class HumanTypeApp(ctk.CTk):
         tray = self._tray
         self._tray = None
         self._tray_thread = None
+        self._tray_active = False
         if tray is not None:
             try:
                 tray.stop()
