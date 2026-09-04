@@ -8,9 +8,13 @@ import time
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
+MAPVK_VK_TO_VSC = 0
 VK_BACK = 0x08
 VK_TAB = 0x09
 VK_RETURN = 0x0D
+# Slow PCs / AV hooks often drop a Backspace that follows a Unicode char too quickly.
+KEY_SETTLE = 0.008
+EDIT_SETTLE = 0.028
 
 
 class Keyboard:
@@ -82,23 +86,30 @@ class WindowsKeyboard(Keyboard):
         self._send = ctypes.windll.user32.SendInput
         self._send.argtypes = [wintypes.UINT, ctypes.POINTER(Input), ctypes.c_int]
         self._send.restype = wintypes.UINT
+        self._map_vk = ctypes.windll.user32.MapVirtualKeyW
+        self._map_vk.argtypes = [wintypes.UINT, wintypes.UINT]
+        self._map_vk.restype = wintypes.UINT
+
+    def _send_pair(self, first: object, second: object) -> None:
+        arr = (self._Input * 2)(first, second)
+        self._send(2, arr, self._ctypes.sizeof(self._Input))
+
+    def _vk_event(self, vk: int, flags: int) -> object:
+        scan = self._map_vk(vk, MAPVK_VK_TO_VSC)
+        ii = self._InputI()
+        ii.ki = self._KeyBdInput(vk, scan, flags, 0, self._extra)
+        return self._Input(INPUT_KEYBOARD, ii)
+
+    def _unicode_event(self, char: str, flags: int) -> object:
+        ii = self._InputI()
+        ii.ki = self._KeyBdInput(0, ord(char), KEYEVENTF_UNICODE | flags, 0, self._extra)
+        return self._Input(INPUT_KEYBOARD, ii)
 
     def _tap_vk(self, vk: int) -> None:
-        self._send_vk(vk, 0)
-        self._send_vk(vk, KEYEVENTF_KEYUP)
+        self._send_pair(self._vk_event(vk, 0), self._vk_event(vk, KEYEVENTF_KEYUP))
 
-    def _send_vk(self, vk: int, flags: int) -> None:
-        ii = self._InputI()
-        ii.ki = self._KeyBdInput(vk, 0, flags, 0, self._extra)
-        inp = self._Input(INPUT_KEYBOARD, ii)
-        self._send(1, self._ctypes.byref(inp), self._ctypes.sizeof(inp))
-
-    def _send_unicode(self, char: str, flags: int) -> None:
-        code = ord(char)
-        ii = self._InputI()
-        ii.ki = self._KeyBdInput(0, code, KEYEVENTF_UNICODE | flags, 0, self._extra)
-        inp = self._Input(INPUT_KEYBOARD, ii)
-        self._send(1, self._ctypes.byref(inp), self._ctypes.sizeof(inp))
+    def _tap_unicode(self, char: str) -> None:
+        self._send_pair(self._unicode_event(char, 0), self._unicode_event(char, KEYEVENTF_KEYUP))
 
     def type_char(self, char: str) -> None:
         if not char:
@@ -110,14 +121,13 @@ class WindowsKeyboard(Keyboard):
             lo = int.from_bytes(encoded[0:2], "little")
             hi = int.from_bytes(encoded[2:4], "little")
             for part in (chr(lo), chr(hi)):
-                self._send_unicode(part, 0)
-                self._send_unicode(part, KEYEVENTF_KEYUP)
+                self._tap_unicode(part)
             return
-        self._send_unicode(char, 0)
-        self._send_unicode(char, KEYEVENTF_KEYUP)
+        self._tap_unicode(char)
 
     def backspace(self) -> None:
         self._tap_vk(VK_BACK)
+        time.sleep(EDIT_SETTLE)
 
     def enter(self) -> None:
         self._tap_vk(VK_RETURN)
@@ -139,6 +149,7 @@ class PynputKeyboard(Keyboard):
     def backspace(self) -> None:
         self._kb.press(self._Key.backspace)
         self._kb.release(self._Key.backspace)
+        time.sleep(EDIT_SETTLE)
 
     def enter(self) -> None:
         self._kb.press(self._Key.enter)
@@ -156,4 +167,4 @@ def create_keyboard() -> Keyboard:
 
 
 def tiny_settle() -> None:
-    time.sleep(0.004)
+    time.sleep(KEY_SETTLE)

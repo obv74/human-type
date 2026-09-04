@@ -124,7 +124,7 @@ class HumanTyper:
         human = max(0.0, min(1.0, settings.humanize))
         typo_rate = (0.018 * human) if settings.typos else 0.0
         delays = _plan_delays(remaining, settings)
-        overhead = 0.004
+        overhead = 0.008
 
         if on_progress and start_at:
             on_progress(TypeProgress(index=start_at, total=total))
@@ -258,39 +258,47 @@ def _travel(prev: str, char: str) -> float:
     return max(0.55, min(1.85, factor))
 
 
+def _notice(human: float, short: bool = False) -> None:
+    """Wait until the target field has applied the last injected key."""
+    if short:
+        time.sleep(random.uniform(0.07, 0.12) * (0.75 + 0.25 * human))
+        return
+    time.sleep(random.uniform(0.12, 0.22) * (0.75 + 0.25 * human))
+
+
 def _slip(keyboard: Keyboard, char: str, nxt: str, human: float) -> None:
     roll = random.random()
     if nxt.isalpha() and roll < 0.22:
         keyboard.write(nxt)
         tiny_settle()
-        time.sleep(random.uniform(0.04, 0.11))
+        _notice(human, short=True)
         keyboard.write(char)
         tiny_settle()
-        time.sleep(random.uniform(0.14, 0.34) * (0.45 + human))
+        _notice(human)
         keyboard.backspace()
         tiny_settle()
-        time.sleep(random.uniform(0.03, 0.07))
+        _notice(human, short=True)
         keyboard.backspace()
         tiny_settle()
-        time.sleep(random.uniform(0.04, 0.10))
+        _notice(human, short=True)
         return
     if roll < 0.50:
         keyboard.write(char)
         tiny_settle()
-        time.sleep(random.uniform(0.04, 0.10))
+        _notice(human)
         keyboard.backspace()
         tiny_settle()
-        time.sleep(random.uniform(0.03, 0.08))
+        _notice(human, short=True)
         return
     wrong = _nearby(char)
     if not wrong:
         return
     keyboard.write(wrong)
     tiny_settle()
-    time.sleep(random.uniform(0.05, 0.14) * (0.4 + 0.6 * human))
+    _notice(human)
     keyboard.backspace()
     tiny_settle()
-    time.sleep(random.uniform(0.02, 0.08))
+    _notice(human, short=True)
 
 
 def _nearby(char: str) -> str:
