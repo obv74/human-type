@@ -213,3 +213,21 @@ def read_os_clipboard() -> str:
 
 def tiny_settle() -> None:
     time.sleep(KEY_SETTLE)
+
+
+def wait_keys_up(timeout: float = 2.0) -> None:
+    """Wait until Ctrl/Shift/Alt/F8/F9/Q are released so injected keys are clean."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    user32.GetAsyncKeyState.restype = wintypes.SHORT
+    keys = (0x10, 0x11, 0x12, 0x77, 0x78, 0x51)  # Shift, Ctrl, Alt, F8, F9, Q
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in keys):
+            return
+        time.sleep(0.03)

@@ -5,15 +5,15 @@ from __future__ import annotations
 import threading
 import time
 import tkinter as tk
-from typing import Optional
+from typing import Callable, Optional
 
 import customtkinter as ctk
 from PIL import Image, ImageDraw
-from pynput import keyboard as pynput_keyboard
 import pystray
 
 from .engine import HumanTyper, TypeProgress, TypeSettings, estimate_seconds
-from .keyboard import create_keyboard, read_os_clipboard
+from .hotkeys import Hotkeys, create_hotkeys
+from .keyboard import create_keyboard, read_os_clipboard, wait_keys_up
 
 ACCENT = "#e8a54b"
 ACCENT_HOVER = "#d4943a"
@@ -48,7 +48,7 @@ class HumanTypeApp(ctk.CTk):
 
         self._typer = HumanTyper(create_keyboard())
         self._busy = False
-        self._hotkey_listener: Optional[pynput_keyboard.GlobalHotKeys] = None
+        self._hotkeys: Optional[Hotkeys] = None
         self._latest_progress: Optional[TypeProgress] = None
         self._last_ui = 0.0
         self._resume_at = 0
@@ -316,23 +316,13 @@ class HumanTypeApp(ctk.CTk):
             self.start_btn.configure(text="Start typing  ·  F8")
 
     def _bind_hotkeys(self) -> None:
-        def on_f8() -> None:
-            self.after(0, self._start_now)
+        def schedule(callback: Callable[[], None]) -> None:
+            self.after(0, callback)
 
-        def on_f9() -> None:
-            self.after(0, self._stop)
-
-        def on_stealth() -> None:
-            self.after(0, self._stealth_from_clipboard)
-
-        self._hotkey_listener = pynput_keyboard.GlobalHotKeys(
-            {
-                "<f8>": on_f8,
-                "<f9>": on_f9,
-                "<ctrl>+<shift>+q": on_stealth,
-            }
+        self._hotkeys = create_hotkeys(
+            schedule, self._start_now, self._stop, self._stealth_from_clipboard
         )
-        self._hotkey_listener.start()
+        self._hotkeys.start()
 
     def _in_tray(self) -> bool:
         return self._tray_active
@@ -426,6 +416,11 @@ class HumanTypeApp(ctk.CTk):
                     return
                 if not quiet:
                     self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
+                wait_keys_up()
+                if not self._busy:
+                    if not quiet:
+                        self.after(0, lambda: self._set_status("Stopped"))
+                    return
                 self._typer.type_text(
                     text,
                     settings,
@@ -542,6 +537,6 @@ class HumanTypeApp(ctk.CTk):
         self._busy = False
         self._typer.stop()
         self._stop_tray()
-        if self._hotkey_listener:
-            self._hotkey_listener.stop()
+        if self._hotkeys:
+            self._hotkeys.stop()
         self.destroy()
