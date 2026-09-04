@@ -13,7 +13,7 @@ from pynput import keyboard as pynput_keyboard
 import pystray
 
 from .engine import HumanTyper, TypeProgress, TypeSettings, estimate_seconds
-from .keyboard import create_keyboard
+from .keyboard import create_keyboard, read_os_clipboard
 
 ACCENT = "#e8a54b"
 ACCENT_HOVER = "#d4943a"
@@ -57,6 +57,8 @@ class HumanTypeApp(ctk.CTk):
         self._tray_active = False
         self._tray: Optional[pystray.Icon] = None
         self._tray_thread: Optional[threading.Thread] = None
+        self._cached_settings = TypeSettings()
+        self._cached_delay = 3
 
         self._build()
         self._bind_hotkeys()
@@ -233,11 +235,14 @@ class HumanTypeApp(ctk.CTk):
         self.text.bind("<<Paste>>", lambda _e: self.after(50, self._refresh_meta))
 
     def _settings(self) -> TypeSettings:
-        return TypeSettings(
+        settings = TypeSettings(
             wpm=int(self.wpm.get()),
             humanize=self.humanize.get() / 100.0,
             typos=bool(self.typos.get()),
         )
+        self._cached_settings = settings
+        self._cached_delay = int(self.delay.get())
+        return settings
 
     def _body(self) -> str:
         return self.text.get("1.0", "end-1c")
@@ -336,13 +341,17 @@ class HumanTypeApp(ctk.CTk):
         """While minimized: type clipboard into the focused field. No UI changes."""
         if self._busy or not self._in_tray():
             return
-        try:
-            clip = self.clipboard_get()
-        except tk.TclError:
-            return
+        # Do not call Tk clipboard or widgets here — that can freeze a withdrawn
+        # window on some PCs. Use the OS clipboard and last-known settings.
+        clip = read_os_clipboard()
         if not clip.strip():
             return
-        self._run_worker(clip, countdown=int(self.delay.get()), quiet=True)
+        self._run_worker(
+            clip,
+            countdown=self._cached_delay,
+            quiet=True,
+            settings=self._cached_settings,
+        )
 
     def _start_with_countdown(self) -> None:
         if self._busy:
@@ -367,10 +376,17 @@ class HumanTypeApp(ctk.CTk):
             return
         self._run_worker(text, countdown=0)
 
-    def _run_worker(self, text: str, countdown: int, quiet: bool = False) -> None:
+    def _run_worker(
+        self,
+        text: str,
+        countdown: int,
+        quiet: bool = False,
+        settings: Optional[TypeSettings] = None,
+    ) -> None:
         # Read Tk widgets on the UI thread only — worker-thread access can hang
         # when the window is withdrawn to the tray.
-        settings = self._settings()
+        if settings is None:
+            settings = self._settings()
         self._stealth = quiet
         if quiet:
             # Stealth clipboard typing: no UI, no pause/resume — F9 just aborts.
@@ -482,6 +498,7 @@ class HumanTypeApp(ctk.CTk):
     def _minimize_to_tray(self) -> None:
         if self._tray_active:
             return
+        self._settings()
         self._tray_active = True
         self.withdraw()
         self._start_tray()
