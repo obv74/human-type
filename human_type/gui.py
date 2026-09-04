@@ -377,10 +377,10 @@ class HumanTypeApp(ctk.CTk):
         settings = self._settings()
         self._stealth = quiet
         start_at = self._resume_at if self._can_resume(text) else 0
+        if start_at == 0:
+            self._resume_text = text
+            self._resume_at = 0
         if not quiet:
-            if start_at == 0:
-                self._resume_text = text
-                self._resume_at = 0
             self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="normal")
             self.progress.set((start_at / len(text)) if text else 0)
@@ -411,12 +411,21 @@ class HumanTypeApp(ctk.CTk):
                     return
                 if not quiet:
                     self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
-                self._typer.type_text(
+                result = self._typer.type_text(
                     text,
                     settings,
                     on_progress=None if quiet else self._on_progress,
                     start_at=start_at,
                 )
+                # Quiet/tray runs skip UI progress, but must still remember pause point
+                # so F8 can resume after F9.
+                if quiet:
+                    if result.stopped:
+                        self._resume_at = result.index
+                        self._resume_text = text
+                    elif result.done:
+                        self._resume_at = 0
+                        self._resume_text = ""
             finally:
                 self.after(0, self._idle)
 
