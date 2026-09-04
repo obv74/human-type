@@ -357,10 +357,12 @@ class HumanTypeApp(ctk.CTk):
             return
         text = self._body()
         if not text.strip():
-            self._set_status("Paste some text first")
+            if not self._in_tray():
+                self._set_status("Paste some text first")
             return
-        # F8 while HumanType is focused would type into this window.
-        if self.focus_get() is not None:
+        # focus_get() stays set after withdraw(), so tray mode must type now.
+        # Only use the countdown when this window is visible and focused.
+        if not self._in_tray() and self.focus_get() is not None:
             self._start_with_countdown()
             return
         self._run_worker(text, countdown=0)
