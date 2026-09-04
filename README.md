@@ -25,8 +25,6 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Or double-click `run.bat` after the venv is set up.
-
 If a program ignores the keystrokes, run the same command from an **Administrator** PowerShell.
 
 ## Settings

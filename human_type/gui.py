@@ -354,18 +354,14 @@ class HumanTypeApp(ctk.CTk):
         self._run_worker(text, countdown=int(self.delay.get()))
 
     def _start_now(self) -> None:
-        if self._busy:
+        # F8 start/resume only when the window is visible; tray keeps F9 stop only.
+        if self._busy or self._in_tray():
             return
         text = self._body()
         if not text.strip():
-            if not self._in_tray():
-                self._set_status("Paste some text first")
+            self._set_status("Paste some text first")
             return
-        # Tray / another app focused → type immediately. Never trust focus_get()
-        # after withdraw(); it still points at our last widget.
-        if self._in_tray():
-            self._run_worker(text, countdown=0, quiet=True)
-            return
+        # F8 while HumanType is focused would type into this window.
         if self.focus_get() is not None:
             self._start_with_countdown()
             return
@@ -376,11 +372,14 @@ class HumanTypeApp(ctk.CTk):
         # when the window is withdrawn to the tray.
         settings = self._settings()
         self._stealth = quiet
-        start_at = self._resume_at if self._can_resume(text) else 0
-        if start_at == 0:
-            self._resume_text = text
-            self._resume_at = 0
-        if not quiet:
+        if quiet:
+            # Stealth clipboard typing: no UI, no pause/resume — F9 just aborts.
+            start_at = 0
+        else:
+            start_at = self._resume_at if self._can_resume(text) else 0
+            if start_at == 0:
+                self._resume_text = text
+                self._resume_at = 0
             self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="normal")
             self.progress.set((start_at / len(text)) if text else 0)
@@ -411,21 +410,12 @@ class HumanTypeApp(ctk.CTk):
                     return
                 if not quiet:
                     self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
-                result = self._typer.type_text(
+                self._typer.type_text(
                     text,
                     settings,
                     on_progress=None if quiet else self._on_progress,
                     start_at=start_at,
                 )
-                # Quiet/tray runs skip UI progress, but must still remember pause point
-                # so F8 can resume after F9.
-                if quiet:
-                    if result.stopped:
-                        self._resume_at = result.index
-                        self._resume_text = text
-                    elif result.done:
-                        self._resume_at = 0
-                        self._resume_text = ""
             finally:
                 self.after(0, self._idle)
 
