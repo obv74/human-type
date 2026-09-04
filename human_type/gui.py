@@ -342,7 +342,7 @@ class HumanTypeApp(ctk.CTk):
             return
         if not clip.strip():
             return
-        self._run_worker(clip, countdown=0, quiet=True)
+        self._run_worker(clip, countdown=int(self.delay.get()), quiet=True)
 
     def _start_with_countdown(self) -> None:
         if self._busy:
