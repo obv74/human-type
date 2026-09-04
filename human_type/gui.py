@@ -8,7 +8,9 @@ import tkinter as tk
 from typing import Optional
 
 import customtkinter as ctk
+from PIL import Image, ImageDraw
 from pynput import keyboard as pynput_keyboard
+import pystray
 
 from .engine import HumanTyper, TypeProgress, TypeSettings, estimate_seconds
 from .keyboard import create_keyboard
@@ -20,6 +22,17 @@ CARD = "#181b21"
 MUTED = "#8b919c"
 TEXT = "#e8eaed"
 DANGER = "#e06c75"
+
+
+def _tray_icon_image() -> Image.Image:
+    size = 64
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((4, 4, 60, 60), radius=14, fill=(232, 165, 75, 255))
+    # Simple keyboard bars
+    draw.rectangle((16, 24, 48, 30), fill=(26, 20, 12, 255))
+    draw.rectangle((16, 34, 36, 40), fill=(26, 20, 12, 255))
+    return img
 
 
 class HumanTypeApp(ctk.CTk):
@@ -40,9 +53,13 @@ class HumanTypeApp(ctk.CTk):
         self._last_ui = 0.0
         self._resume_at = 0
         self._resume_text = ""
+        self._stealth = False
+        self._tray: Optional[pystray.Icon] = None
+        self._tray_thread: Optional[threading.Thread] = None
 
         self._build()
         self._bind_hotkeys()
+        self.bind("<Unmap>", self._on_unmap)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(200, self._refresh_meta)
 
@@ -299,8 +316,32 @@ class HumanTypeApp(ctk.CTk):
         def on_f9() -> None:
             self.after(0, self._stop)
 
-        self._hotkey_listener = pynput_keyboard.GlobalHotKeys({"<f8>": on_f8, "<f9>": on_f9})
+        def on_stealth() -> None:
+            self.after(0, self._stealth_from_clipboard)
+
+        self._hotkey_listener = pynput_keyboard.GlobalHotKeys(
+            {
+                "<f8>": on_f8,
+                "<f9>": on_f9,
+                "<ctrl>+<shift>+q": on_stealth,
+            }
+        )
         self._hotkey_listener.start()
+
+    def _in_tray(self) -> bool:
+        return self.state() == "withdrawn"
+
+    def _stealth_from_clipboard(self) -> None:
+        """While minimized: type clipboard into the focused field. No UI changes."""
+        if self._busy or not self._in_tray():
+            return
+        try:
+            clip = self.clipboard_get()
+        except tk.TclError:
+            return
+        if not clip.strip():
+            return
+        self._run_worker(clip, countdown=0, stealth=True)
 
     def _start_with_countdown(self) -> None:
         if self._busy:
@@ -324,39 +365,51 @@ class HumanTypeApp(ctk.CTk):
             return
         self._run_worker(text, countdown=0)
 
-    def _run_worker(self, text: str, countdown: int) -> None:
-        start_at = self._resume_at if self._can_resume(text) else 0
-        if start_at == 0:
-            self._resume_text = text
-            self._resume_at = 0
+    def _run_worker(self, text: str, countdown: int, stealth: bool = False) -> None:
+        self._stealth = stealth
+        if stealth:
+            start_at = 0
+        else:
+            start_at = self._resume_at if self._can_resume(text) else 0
+            if start_at == 0:
+                self._resume_text = text
+                self._resume_at = 0
+            self.start_btn.configure(state="disabled")
+            self.stop_btn.configure(state="normal")
+            self.progress.set((start_at / len(text)) if text else 0)
+            self.text.configure(state="disabled")
+
         self._busy = True
-        self.start_btn.configure(state="disabled")
-        self.stop_btn.configure(state="normal")
-        self.progress.set((start_at / len(text)) if text else 0)
-        self.text.configure(state="disabled")
 
         def work() -> None:
             try:
                 for left in range(countdown, 0, -1):
                     if not self._busy:
-                        self.after(0, lambda: self._set_status("Stopped"))
+                        if not stealth:
+                            self.after(0, lambda: self._set_status("Stopped"))
                         return
-                    self.after(
-                        0,
-                        lambda n=left: self._set_status(
-                            f"Click the target field… starting in {n}"
-                            if start_at == 0
-                            else f"Click the field to resume… {n}"
-                        ),
-                    )
+                    if not stealth:
+                        self.after(
+                            0,
+                            lambda n=left: self._set_status(
+                                f"Click the target field… starting in {n}"
+                                if start_at == 0
+                                else f"Click the field to resume… {n}"
+                            ),
+                        )
                     time.sleep(1)
                 if not self._busy:
-                    self.after(0, lambda: self._set_status("Stopped"))
+                    if not stealth:
+                        self.after(0, lambda: self._set_status("Stopped"))
                     return
-                self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
+                if not stealth:
+                    self.after(0, lambda: self._set_status("Typing…  F9 to pause"))
                 settings = self._settings()
                 self._typer.type_text(
-                    text, settings, on_progress=self._on_progress, start_at=start_at
+                    text,
+                    settings,
+                    on_progress=None if stealth else self._on_progress,
+                    start_at=start_at,
                 )
             finally:
                 self.after(0, self._idle)
@@ -364,6 +417,8 @@ class HumanTypeApp(ctk.CTk):
         threading.Thread(target=work, daemon=True).start()
 
     def _on_progress(self, progress: TypeProgress) -> None:
+        if self._stealth:
+            return
         self._latest_progress = progress
         now = time.monotonic()
         if not (progress.done or progress.stopped or now - self._last_ui > 0.05):
@@ -396,10 +451,15 @@ class HumanTypeApp(ctk.CTk):
             return
         self._busy = False
         self._typer.stop()
-        self._set_status("Stopping…")
+        if not self._stealth:
+            self._set_status("Stopping…")
 
     def _idle(self) -> None:
+        stealth = self._stealth
         self._busy = False
+        self._stealth = False
+        if stealth:
+            return
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
         self.text.configure(state="normal")
@@ -408,9 +468,56 @@ class HumanTypeApp(ctk.CTk):
     def _set_status(self, message: str) -> None:
         self.status.configure(text=message)
 
+    def _on_unmap(self, event: tk.Event) -> None:
+        if event.widget is not self:
+            return
+        if self.state() == "iconic":
+            self.after(0, self._minimize_to_tray)
+
+    def _minimize_to_tray(self) -> None:
+        if self.state() == "withdrawn":
+            return
+        self.withdraw()
+        self._start_tray()
+
+    def _start_tray(self) -> None:
+        if self._tray is not None:
+            return
+
+        def on_show(icon: pystray.Icon, _item: pystray.MenuItem) -> None:
+            self.after(0, self._restore_from_tray)
+
+        def on_quit(icon: pystray.Icon, _item: pystray.MenuItem) -> None:
+            self.after(0, self._on_close)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Show HumanType", on_show, default=True),
+            pystray.MenuItem("Quit", on_quit),
+        )
+        self._tray = pystray.Icon("HumanType", _tray_icon_image(), "HumanType", menu)
+        self._tray_thread = threading.Thread(target=self._tray.run, daemon=True)
+        self._tray_thread.start()
+
+    def _stop_tray(self) -> None:
+        tray = self._tray
+        self._tray = None
+        self._tray_thread = None
+        if tray is not None:
+            try:
+                tray.stop()
+            except Exception:
+                pass
+
+    def _restore_from_tray(self) -> None:
+        self._stop_tray()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
     def _on_close(self) -> None:
         self._busy = False
         self._typer.stop()
+        self._stop_tray()
         if self._hotkey_listener:
             self._hotkey_listener.stop()
         self.destroy()
